@@ -222,15 +222,14 @@ packrat/lib*/
 
 # Data Folders
 AH.Analysis/data/
+AH.Analysis/data-raw/*.csv
+AH.Analysis/data-raw/EP_output_csv/
+AH.Analysis/data-raw/hourly_heat_energy/
 
 # Data Files
-*.csv
 *.geojson
 *.zip
 *.epw
-
-# images
-images/
 
 # word files
 *.docx
