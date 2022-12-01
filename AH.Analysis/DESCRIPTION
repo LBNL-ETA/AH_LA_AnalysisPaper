@@ -1,0 +1,13 @@
+Package: AH.Analysis
+Title: Utility Functions Analyze and Visualize AH data
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Yujie",
+           family = "Xu",
+           role = c("aut", "cre"),
+           email = "yujiex@lbl.gov",
+           comment = c(ORCID = "0000-0002-1805-1872"))
+Description: Utility functions used in reading, analyzing, and visualization of the AH data set from https://doi.org/10.57931/1892041
+License: What license it uses
+Encoding: UTF-8
+LazyData: true

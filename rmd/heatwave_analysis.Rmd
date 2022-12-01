@@ -1,0 +1,412 @@
+---
+title: "heatwave analysis for the finer grid"
+author: "Yujie Xu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning=FALSE)
+knitr::opts_knit$set(root.dir = "~/Dropbox/workLBNL/EESA/AH_LA_AnalysisPaper/rmd/")
+```
+
+```{r helpers, message=FALSE}
+library("dplyr")
+library("tmap")
+library("ggpmisc")
+```
+
+# Environment variables before and after the heatwave
+
+```{r plotEnvrn, message=FALSE}
+devtools::load_all("../AH.Analysis")
+
+df.weather.2018 %>%
+  dplyr::mutate(cell.id = factor(cell.id)) %>%
+  dplyr::filter((month == 6 & day > 26) | (month == 7 & day < 15)) %>%
+  dplyr::select(cell.id, month:minute, DryBulb.C, RelHum.percent, `WindSpd.m/s`
+                ) %>%
+  dplyr::mutate(timestamp = sprintf("2018-%02d-%02d %02d:%02d:00", month, day, hour, minute)) %>%
+  dplyr::mutate(timestamp.pox = as.POSIXct(timestamp)) %>%
+  tidyr::gather(variable, value, DryBulb.C:`WindSpd.m/s`) %>%
+  dplyr::mutate_at(vars(variable), recode, "DryBulb.C"="Dry Bulb Temperature (C)",
+                   "RelHum.percent" = "Relative Humidity (%)",
+                   "WindSpd.m/s"="Wind Speed (m/s)") %>%
+  ggplot2::ggplot(ggplot2::aes(x=timestamp.pox, y=value, color=cell.id, group=cell.id)) +
+  ggplot2::geom_line(size = 0.2) +
+  ggplot2::facet_wrap(.~variable, ncol=1, scales = "free_y") +
+  ggplot2::geom_vline(xintercept = c(as.POSIXct("2018-06-29 00:00:00"),
+                                     as.POSIXct("2018-07-06 00:00:00"),
+                                     as.POSIXct("2018-07-13 00:00:00")), linetype = "dashed") +
+  ggplot2::xlab("Time") +
+  ggplot2::ylab("") +
+  ggplot2::theme()
+ggplot2::ggsave("../images/heatwave_weather.png", width = 10, height = 5)
+
+coastal.cells = c(9, 23, 36, 35, 34)
+inland.cells = c(65, 66, 79, 68, 120)
+
+df.weather.2018 %>%
+  dplyr::filter(cell.id %in% c(coastal.cells, inland.cells)) %>%
+  dplyr::mutate(location = ifelse(cell.id %in% coastal.cells, "coastal", "inland")) %>%
+  ## dplyr::mutate(cell.id = factor(cell.id)) %>%
+  dplyr::filter((month == 6 & day > 26) | (month == 7 & day < 15)) %>%
+  dplyr::select(cell.id, location, month:minute, DryBulb.C, RelHum.percent, `WindSpd.m/s`
+                ) %>%
+  dplyr::mutate(timestamp = sprintf("2018-%02d-%02d %02d:%02d:00", month, day, hour, minute)) %>%
+  dplyr::mutate(timestamp.pox = as.POSIXct(timestamp)) %>%
+  tidyr::gather(variable, value, DryBulb.C:`WindSpd.m/s`) %>%
+  dplyr::mutate_at(vars(variable), recode, "DryBulb.C"="Dry Bulb Temperature (C)",
+                   "RelHum.percent" = "Relative Humidity (%)",
+                   "WindSpd.m/s"="Wind Speed (m/s)") %>%
+  ggplot2::ggplot(ggplot2::aes(x=timestamp.pox, y=value, color=location, group=cell.id)) +
+  ggplot2::geom_line(size = 0.2) +
+  ggplot2::facet_wrap(.~variable, ncol=1, scales = "free_y") +
+  ggplot2::geom_vline(xintercept = c(as.POSIXct("2018-06-29 00:00:00"),
+                                     as.POSIXct("2018-07-06 00:00:00"),
+                                     as.POSIXct("2018-07-13 00:00:00")), linetype = "dashed") +
+  ggplot2::xlab("Time") +
+  ggplot2::ylab("") +
+  ggplot2::theme()
+ggplot2::ggsave("../images/heatwave_weather_inland_coastal.png", width = 10, height = 5)
+```
+
+# Hourly AH timeseries by component
+
+```{r plotAHtimeSeries}
+
+grid.area = grid.finer %>%
+  dplyr::select(id.grid.finer, FootprintArea.m2)
+
+sf::st_geometry(grid.area) <- NULL
+
+to.plot.quartile <- hourly.AH.per.to.during.heatwave.finer %>%
+  dplyr::mutate(emission.exf.exhaust.relief = emission.exfiltration + emission.exhaust + emission.ref) %>%
+  dplyr::select(-emission.exfiltration, -emission.exhaust, -emission.ref) %>%
+  dplyr::select(geoid:hour, status, everything()) %>%
+  tidyr::gather(variable, value, emission.rej:emission.exf.exhaust.relief) %>%
+  dplyr::left_join(grid.area, by = c("geoid"="id.grid.finer")) %>%
+  dplyr::mutate(value = value * 0.000277778 / FootprintArea.m2) %>%
+  dplyr::group_by(date, hour, status, variable) %>%
+  dplyr::summarise_at(vars(value),
+                      tibble::lst(
+                                  "25th"=~quantile(., probs=0.25),
+                                  "50th"=~quantile(., probs=0.5),
+                                  "75th"=~quantile(., probs=0.75)
+                                  )) %>%
+  dplyr::ungroup() %>%
+  tidyr::gather(percentile, value, ends_with("th")) %>%
+  dplyr::mutate_at(vars(variable), recode, "emission.overall"="overall heat emission", "emission.exf.exhaust.relief"="zone exfiltration + exhaust + relief air", "emission.rej"="HVAC heat rejection", "emission.surf"="surface heat emission") %>%
+  dplyr::mutate(datetime = as.POSIXct(sprintf("2018/%s %s", date, hour), format="%Y/%m/%d %H:%M:%S")) %>%
+  dplyr::mutate(variable = factor(variable,
+                                  levels = c("HVAC heat rejection",
+                                             "zone exfiltration + exhaust + relief air",
+                                             "surface heat emission",
+                                             "overall heat emission"))) %>%
+  {.}
+
+to.plot.quartile %>%
+  ggplot2::ggplot(ggplot2::aes(x=datetime, y=value, color=percentile,
+                               group=interaction(variable, percentile))) +
+  ggplot2::geom_path(size=0.2) +
+  ggplot2::ggtitle("Distribution of hourly heat emission at 450m wide WRF grid resolution") +
+  ggplot2::ylab("Wh/m2 building footprint area") +
+  ggplot2::geom_vline(xintercept = c(as.POSIXct("2018-06-29 00:00:00"),
+                                     as.POSIXct("2018-07-06 00:00:00"),
+                                     as.POSIXct("2018-07-13 00:00:00")), linetype = "dashed") +
+  ggplot2::facet_wrap(.~variable, ncol=1) +
+  ggplot2::theme()
+ggplot2::ggsave("../images/building_quartile_emission_Wperm2.png", width = 7, height=5, dpi=600)
+```
+
+# Before vs after heatwave heat emission change
+## Total AH
+
+```{r AHchange, message=FALSE}
+
+heatwave.days = sprintf("07/%02d", 6:12)
+
+pre.heatwave.days = c(sprintf("06/%02d", 29:30), sprintf("07/%02d", 1:5))
+
+weekly.total.pre.vs.within.heatwave <- df.finer.daily %>%
+  dplyr::filter(date %in% c(pre.heatwave.days, heatwave.days)) %>%
+  dplyr::select(-starts_with("energy")) %>%
+  dplyr::mutate(emission.overall.no.surf = emission.overall - emission.surf) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:emission.overall.no.surf) %>%
+  dplyr::mutate(status = ifelse(date %in% heatwave.days, "heatwave", "pre-heatwave")) %>%
+  dplyr::group_by(geoid, status, variable) %>%
+  dplyr::summarise(GJ = sum(GJ)) %>%
+  dplyr::ungroup() %>%
+  tidyr::spread(status, GJ) %>%
+  dplyr::mutate(weekly.total.diff.GJ = heatwave - `pre-heatwave`) %>%
+  {.}
+
+variable.label = tibble::tibble(variable = c("emission.surf", "emission.rej", "emission.exfiltration", "emission.exhaust", "emission.ref", "emission.overall", "emission.overall.no.surf"),
+                                component = c("Surface convection",
+                                              "HVAC rejection", "Exfiltration",
+                                              "Exhaust air", "HVAC Relief air",
+                                              "Total",
+                                              "non-surface Total"))
+
+dfs.by.variable <- weekly.total.pre.vs.within.heatwave %>%
+  dplyr::left_join(variable.label, by = "variable") %>%
+  dplyr::group_by(variable) %>%
+  dplyr::group_split()
+
+ttest.result <- lapply(dfs.by.variable, function(df.i) {
+  var.name = df.i$variable[[1]]
+  var.label = df.i$component[[1]]
+  out <- t.test(df.i$weekly.total.diff.GJ)
+  tibble::tibble(variable = var.name, mean = out$estimate[[1]], ci.low = out$conf.int[[1]], ci.hi = out$conf.int[[2]], p.value = out$p.value[[1]], component = var.label)
+}) %>%
+  dplyr::bind_rows()
+
+variable.order = tibble::tibble(order = 1:7, variable = c("emission.surf", "emission.rej", "emission.exfiltration", "emission.exhaust", "emission.ref", "emission.overall", "emission.overall.no.surf"))
+
+ttest.result.tbl <- ttest.result %>%
+  dplyr::left_join(variable.order, by = "variable") %>%
+  dplyr::arrange(order) %>%
+  dplyr::select(component, mean, ci.low, ci.hi, p.value) %>%
+  {.}
+
+ttest.result.tbl %>%
+  knitr::kable()
+
+ttest.result.tbl %>%
+  readr::write_csv("../table/AH_change_by_component_ttest.csv")
+
+plot.ttest.result <- function(result.tbl, imagefile, dashline.pos) {
+  result.tbl %>%
+    ggplot2::ggplot(ggplot2::aes(x = component, y = mean)) +
+    ggplot2::geom_point(stat = "identity") +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = ci.low, ymax = ci.hi), width = 0.3) +
+    ggplot2::theme_bw() +
+    ggplot2::ggtitle("Average change in AH during the heatwave week vs one week before (GJ)") +
+    ggplot2::ylab("Change in AH (GJ)") +
+    ggplot2::xlab("AH component") +
+    ggplot2::geom_hline(yintercept = 0) +
+    ggplot2::geom_vline(xintercept = dashline.pos, linetype = "dashed") +
+    ggplot2::coord_flip() +
+    ggplot2::theme()
+  ggplot2::ggsave(sprintf("../images/%s", imagefile), width = 8.5, height = 3)
+}
+
+ttest.result.tbl %>%
+  dplyr::filter(!component %in% c("Total", "Surface convection")) %>%
+  plot.ttest.result("AH_change_pre_to_within_heatwave_no_surf.png", 4.5)
+
+ttest.result.tbl %>%
+  dplyr::mutate(component = factor(component, levels = c("Surface convection", "HVAC rejection", "Exfiltration", "Exhaust air", "HVAC Relief air", "Total", "non-surface Total"))) %>%
+  plot.ttest.result("AH_change_pre_to_within_heatwave.png", 5.5)
+```
+
+# Spatial pattern of the AH increaser vs decreasers
+
+```{r mapAHchange, message = FALSE}
+
+for (i in seq_along(dfs.by.variable)) {
+  var.name = dfs.by.variable[[i]]$variable[[1]]
+  var.label = dfs.by.variable[[i]]$component[[1]]
+  print(var.name)
+  print(var.label)
+  ## to.plot <- dfs.by.variable[[i]] %>%
+  ##   dplyr::mutate(change = ifelse(weekly.total.diff.GJ > 0, "increase", "decrease")) %>%
+  ##   dplyr::left_join(grid.finer, by = c("geoid"="id.grid.finer")) %>%
+  ##   sf::st_as_sf() %>%
+  ##   {.}
+  ## p <- tm_shape(to.plot) +
+  ##   tm_polygons(col="change", border.alpha = 0, palette = "Set2") +
+  ##   tm_layout(main.title = sprintf("pre-to-during heatwave change in\n%s AH(GJ)", var.label),
+  ##             legend.position=c("left", "bottom"), legend.outside=FALSE) +
+  ##   tm_shape(la.boundary.valid) +
+  ##   tm_polygons("CITY", alpha=0, legend.show=FALSE)
+  ## tmap_save(p, sprintf("../images/pre-to-during_AH_change_%s.png", gsub(".", "_", var.name, fixed=TRUE)))
+}
+
+```
+
+# Prototype building model pre-to-during heatwave AH change
+
+```{r preVsDuringByType, message = FALSE}
+idf.epw.AH.pre.during.heatwave.diff <- epout.pre.during.heatwave %>%
+  dplyr::select(-starts_with("energy")) %>%
+  dplyr::mutate(emission.overall.no.surf = emission.overall - emission.surf) %>%
+  dplyr::mutate(status = ifelse(date %in% heatwave.days, "heatwave", "pre-heatwave")) %>%
+  dplyr::group_by(idf.kw, epw.id, building.type, vintage, status) %>%
+  dplyr::summarise_if(is.numeric, sum) %>%
+  dplyr::ungroup() %>%
+  tidyr::gather(variable, value, emission.exfiltration:emission.overall.no.surf) %>%
+  ## convert to MJ
+  dplyr::mutate(value = value * 1e-6) %>%
+  dplyr::left_join(prototype.area, by = "idf.kw") %>%
+  ## convert to MJ/m2
+  dplyr::mutate(value = value / prototype.m2) %>%
+  tidyr::spread(status, value) %>%
+  dplyr::mutate(weekly.total.diff.MJ.per.m2 = heatwave - `pre-heatwave`) %>%
+  {.}
+
+idf.epw.AH.pre.during.heatwave.diff <- idf.epw.AH.pre.during.heatwave.diff %>%
+  dplyr::mutate(sector = ifelse(building.type %in% c("single-family", "multi-family"), "residential", "non-residential")) %>%
+  dplyr::left_join(variable.label, by = "variable") %>%
+  {.}
+
+plot.pre.to.during.hw.AH.by.type <- function(df, image.height = 4, sector.filter=NULL) {
+  var.name = df$variable[[1]]
+  var.label = df$component[[1]]
+  if (!is.null(sector.filter)) {
+    to.plot <- df %>%
+      dplyr::filter(sector == sector.filter)
+    imagename = sprintf("../images/%s_change_pre_to_within_heatwave_epout_%s.png", gsub(".", "_", var.name, fixed=TRUE), sector.filter)
+    titlestr = sprintf("Pre-to-during heatwave %s change for prototype buildings\n(%s buildings)", var.label, sector.filter)
+  } else {
+    to.plot <- df
+    imagename = sprintf("../images/%s_change_pre_to_within_heatwave_epout.png", gsub(".", "_", var.name, fixed=TRUE))
+    titlestr = sprintf("Pre-to-during heatwave %s change for prototype buildings", var.label)
+  }
+  to.plot %>%
+    dplyr::select(-epw.id, -prototype.m2, -heatwave, -`pre-heatwave`) %>%
+    dplyr::group_by(idf.kw, building.type, vintage, variable) %>%
+    dplyr::summarise_at(vars(weekly.total.diff.MJ.per.m2), tibble::lst(min, mean, max)) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(vintage = factor(vintage, levels = c("before 1980", "1981-2008 (2004)", "after 2008 (2013)"))) %>%
+    ggplot2::ggplot(ggplot2::aes(x = building.type, y = mean)) +
+    ggplot2::geom_point(size = 0.7) +
+    ggplot2::geom_errorbar(ggplot2::aes(ymin = min, ymax = max), width = 0.3, size = 0.2) +
+    ggplot2::facet_wrap(.~vintage, nrow = 1) +
+    ggplot2::coord_flip() +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed") +
+    ggplot2::ggtitle(titlestr) +
+    ggplot2::ylab("MJ/m2 building size") +
+    ggplot2::theme()
+  ggplot2::ggsave(imagename, width = 8.5, height = image.height)
+}
+
+dfs.prototype.results <- idf.epw.AH.pre.during.heatwave.diff %>%
+  dplyr::group_by(variable) %>%
+  dplyr::group_split()
+
+for (df in dfs.prototype.results) {
+  plot.pre.to.during.hw.AH.by.type(df, image.height = 2.5, sector.filter = "residential")
+  plot.pre.to.during.hw.AH.by.type(df, image.height = 4, sector.filter = "non-residential")
+}
+
+```
+
+# Linear regression fit coarse grid
+
+Daily AH and daily average temperature regression. Averaged over grid cells.
+
+```{r linReg}
+
+heatwave.days = sprintf("07/%02d", 6:12)
+pre.heatwave.days = c(sprintf("06/%02d", 29:30), sprintf("07/%02d", 1:5))
+
+daily.avg.temperature <- df.weather.2018 %>%
+  dplyr::group_by(cell.id, year, month, day) %>%
+  dplyr::summarize(DryBulb.C = mean(DryBulb.C)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(date = sprintf("%02d/%02d", month, day)) %>%
+  dplyr::select(cell.id, date, DryBulb.C)
+
+grid.finer.centroid = sf::st_centroid(grid.finer)
+
+finer.to.coarse.mapping <- sf::st_join(grid.coarse %>% select(id.grid.coarse), grid.finer.centroid %>% select(id.grid.finer), join = sf::st_contains)
+
+sf::st_geometry(finer.to.coarse.mapping) <- NULL
+
+finer.to.coarse.mapping <- finer.to.coarse.mapping %>%
+  tibble::as_tibble()
+
+dfs.to.plot <- df.finer.daily %>%
+  dplyr::left_join(finer.to.coarse.mapping, by = c("geoid"="id.grid.finer")) %>%
+  dplyr::left_join(daily.avg.temperature, by = c("id.grid.coarse"="cell.id", "date")) %>%
+  dplyr::select(-starts_with("energy")) %>%
+  tidyr::gather(variable, GJ, starts_with("emission")) %>%
+  dplyr::group_by(date, variable) %>%
+  dplyr::summarize_at(vars(DryBulb.C, GJ), mean) %>%
+  dplyr::left_join(variable.label, by = "variable") %>%
+  dplyr::group_by(variable) %>%
+  dplyr::group_split() %>%
+  {.}
+
+dfs.to.plot[[1]]
+
+plot.scatter.cmp <- function(df, title.str, output.name) {
+  p <- df %>%
+    ggplot2::ggplot(ggplot2::aes(x=`DryBulb.C`, y=`GJ`)) +
+    ggplot2::geom_point(size = 0.2) +
+    ggpmisc::stat_poly_line(formula = y ~ x) +
+    ggpmisc::stat_poly_eq(formula = y ~ x, aes(label = paste(after_stat(eq.label),
+                                                                  after_stat(rr.label), sep = "*\", \"*"))) +
+    ggplot2::ggtitle(title.str) +
+    ggplot2::theme()
+  print(p)
+  ggplot2::ggsave(output.name, width = 6, height = 4, dpi = 600)
+}
+
+## restrict to july
+for (i in seq_along(dfs.to.plot)) {
+  df.i = dfs.to.plot[[i]] %>%
+    ## restrict to july
+    tidyr::separate(date, into = c("month", "day"), sep = "/", remove = FALSE) %>%
+    dplyr::filter(month == "07") %>%
+    dplyr::select(-month, -day) %>%
+    {.}
+  title.str = sprintf("Daily %s AH - daily average temperature, 2018 Jul", df.i$component[[1]])
+  var.name = df.i$variable[[1]]
+  output.name = sprintf("../images/jul_AH_temperature_%s.png", gsub(".", "_", var.name, fixed = TRUE))
+  plot.scatter.cmp(df.i, title.str, output.name)
+}
+
+## all year
+for (i in seq_along(dfs.to.plot)) {
+  df.i = dfs.to.plot[[i]]
+  title.str = sprintf("Daily %s AH - daily average temperature, 2018", df.i$component[[1]])
+  var.name = df.i$variable[[1]]
+  output.name = sprintf("../images/AH_temperature_%s.png", gsub(".", "_", var.name, fixed = TRUE))
+  plot.scatter.cmp(df.i, title.str, output.name)
+}
+```
+
+# Map view of different timestep of a heatwave day
+
+```{r hourMap}
+dfs.to.plot.map <- hourly.AH.per.to.during.heatwave.finer %>%
+  dplyr::mutate(hour = as.numeric(substr(hour, 1, 2)) - 1) %>%
+  dplyr::filter(date == "07/06", hour %in% c(0, 6, 12, 18)) %>%
+  dplyr::select(-status) %>%
+  tidyr::gather(variable, J, emission.exfiltration:emission.overall) %>%
+  dplyr::left_join(variable.label, by = "variable") %>%
+  dplyr::filter(variable %in% c("emission.overall", "emission.rej", "emission.surf")) %>%
+  dplyr::group_by(variable) %>%
+  dplyr::group_split() %>%
+  {.}
+
+for (df.j in dfs.to.plot.map) {
+  var.name = df.j$variable[[1]]
+  title.str = sprintf("%s AH snapshot (Jul. 6, 2018)", df.j$component[[1]])
+  output.name = sprintf("../images/snapshot_0706_%s.png", gsub(".", "_", var.name, fixed = TRUE))
+  print(title.str)
+  to.plot.j <- df.j %>%
+    dplyr::left_join(grid.finer %>% dplyr::select(id.grid.finer, FootprintArea.m2),
+                     by = c("geoid"="id.grid.finer")) %>%
+    ## convert to w/m2
+    dplyr::mutate(w.per.m2 = J * 0.000277778 / FootprintArea.m2) %>%
+    sf::st_as_sf() %>%
+    {.}
+  p <- tm_shape(to.plot.j) +
+    tm_polygons(col="w.per.m2", n=8, style="quantile", midpoint=0, palette = "seq", border.alpha = 0) +
+    tm_facets(by="hour", ncol=4) +
+    tm_layout(main.title = title.str,
+              legend.position=c("left", "bottom"), legend.outside=FALSE,
+              aes.palette = list(seq = "-RdYlGn")) +
+    tm_shape(la.boundary.valid) +
+    tm_polygons("CITY", alpha=0, legend.show=FALSE)
+  print(p)
+  tmap_save(p, output.name, width=12, height=4)
+}
+
+```
