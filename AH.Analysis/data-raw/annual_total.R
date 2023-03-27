@@ -62,32 +62,18 @@ files = list.files(result.csv.dir, pattern = "*.csv")
 
 head(files)
 
+devtools::load_all("../../../../packages/AHhelper")
+
 result.mon <- lapply(files, function(f) {
     print(f)
     tokens = unlist(stringr::str_split(f, pattern = "____"))
     idf.kw = tokens[[1]]
     epw.id = gsub(".csv", "", tokens[[2]])
-    df = readr::read_csv(sprintf("%s/%s", result.csv.dir, f), col_types = readr::cols()) %>%
-        dplyr::mutate(emission.exfiltration = `Environment:Site Total Zone Exfiltration Heat Loss [J](Hourly)`,
-                      emission.exhaust = `Environment:Site Total Zone Exhaust Air Heat Loss [J](Hourly)`,
-                      emission.ref = `SimHVAC:Air System Relief Air Total Heat Loss Energy [J](Hourly)`,
-                      emission.rej = `SimHVAC:HVAC System Total Heat Rejection Energy [J](Hourly)`,
-                      emission.surf = `Environment:Site Total Surface Heat Emission to Air [J](Hourly)`,
-                      emission.overall = emission.exfiltration + emission.exhaust + emission.ref + emission.rej + emission.surf) %>%
-        dplyr::mutate(energy.elec = `Electricity:Facility [J](Hourly)`) %>%
-        dplyr::mutate(energy.overall = energy.elec) %>%
+    df <- read.eplusout(result.csv.dir, f) %>%
         dplyr::mutate(idf.kw = idf.kw, epw.id = epw.id) %>%
         {.}
-    if ("NaturalGas:Facility [J](Hourly)" %in% names(df)) {
-      df <- df %>%
-          dplyr::mutate(energy.gas = `NaturalGas:Facility [J](Hourly)`) %>%
-          dplyr::mutate(energy.overall = energy.elec + energy.gas)
-    }
-    if (nrow(df) != 8760) {
-        print(sprintf("%s: %d", f, nrow(df)))
-    }
     df <- df %>%
-        dplyr::select(`Date/Time`, idf.kw, epw.id, starts_with("emission."), starts_with("energy")) %>%
+        dplyr::select(`Date/Time`, idf.kw, epw.id, everything()) %>%
         tidyr::separate(`Date/Time`, into = c("month", "suffix"), sep = "/") %>%
         dplyr::select(-suffix) %>%
         dplyr::group_by(idf.kw, epw.id, month) %>%
