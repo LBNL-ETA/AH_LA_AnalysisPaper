@@ -1,0 +1,188 @@
+---
+title: "Main analysis"
+author: "Yujie Xu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning=FALSE)
+knitr::opts_knit$set(root.dir = "~/Dropbox/workLBNL/EESA/AH_LA_AnalysisPaper/rmd/")
+```
+
+```{r helpers, message=FALSE}
+library("dplyr")
+library("tmap")
+library("ggpmisc")
+```
+
+# Where does high heat emission come from
+
+annual total heat emission in MJ/m2 of grid size
+
+```{r loadData, fig.width = 10, fig.height = 10}
+load("../AH.Analysis/data/df.finer.ann.rda")
+load("../AH.Analysis/data/grid.finer.rda")
+load("../AH.Analysis/data/la.boundary.valid.rda")
+
+grid.finer.no.geo <- grid.finer
+
+sf::st_geometry(grid.finer.no.geo) <- NULL
+
+df.finer.ann.norm.area <- df.finer.ann %>%
+  dplyr::left_join(grid.finer.no.geo, by = c("geoid"="id.grid.finer")) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:energy.overall) %>%
+  dplyr::mutate(MJ.perm2.grid = GJ * 1e3 / area.m2) %>%
+  dplyr::mutate(MJ.perm2.bldg.size = GJ * 1e3 / building.area.m2) %>%
+  dplyr::mutate(MJ.perm2.bldg.foot = GJ * 1e3 / FootprintArea.m2) %>%
+  dplyr::select(geoid, MJ.perm2.grid, MJ.perm2.bldg.size, MJ.perm2.bldg.foot) %>%
+  dplyr::inner_join(grid.finer, by=c("geoid"="id.grid.finer")) %>%
+  sf::st_as_sf() %>%
+  {.}
+
+tm_shape(df.finer.ann.norm.area) +
+  tm_polygons(col="MJ.perm2.grid", title="Heat Emission (MJ/m2)", n=10, style="quantile", midpoint=0, palette="seq", border.alpha = 0) +
+  tm_layout(main.title = "2018 Annual Heat Emission (MJ/m2 grid size)",
+            legend.position=c("left", "bottom"), legend.outside=FALSE,
+            aes.palette = list(seq = "-RdYlGn"),
+            title.size = 1) +
+  tm_shape(la.boundary.valid) +
+  tm_polygons("CITY", alpha=0, legend.show=FALSE)
+
+## tm_shape(df.coarse.ann.norm.area) +
+##   tm_polygons(col="MJ.perm2.grid", title="Heat Emission (MJ/m2)", n=10, style="quantile", midpoint=0, palette="seq", border.alpha = 0) +
+##   tm_layout(main.title = "2018 Annual Heat Emission (MJ/m2 building footprint)",
+##             legend.position=c("left", "bottom"), legend.outside=FALSE,
+##             aes.palette = list(seq = "-RdYlGn")) +
+##   tm_shape(la.boundary.valid) +
+##   tm_polygons("CITY", alpha=0, legend.show=FALSE)
+```
+
+# Which building type has the highest heat emission
+
+Top heat emission building types in each grid
+
+```{r HighEmissionType, fig.width = 10, fig.height = 10}
+
+load("../AH.Analysis/data/annual.total.AH.per.usetype.grid.finer.rda")
+
+highest.emission.type <- annual.total.AH.per.usetype.grid.finer %>%
+  dplyr::arrange(id.grid.finer, desc(emission.overall)) %>%
+  dplyr::group_by(id.grid.finer) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup() %>%
+  dplyr::inner_join(grid.finer, by=c("id.grid.finer")) %>%
+  na.omit() %>%
+  sf::st_as_sf() %>%
+  {.}
+
+tm_shape(highest.emission.type) +
+  tmap::tm_polygons(col = "usetype", title = "Top heat emission building usetype", palette="Set3", border.alpha = 0) +
+  tm_shape(la.boundary.valid) +
+  tm_polygons("CITY", alpha=0, legend.show=FALSE)
+```
+
+Dominant building type for each grid
+
+```{r dominant building type, fig.width = 10, fig.height = 10}
+
+load("../AH.Analysis/data/grid.finer.rda")
+
+main.usetype.per.grid <- annual.total.AH.per.usetype.grid.finer %>%
+  dplyr::select(id.grid.finer, usetype, building.area.m2) %>%
+  dplyr::arrange(id.grid.finer, desc(building.area.m2)) %>%
+  dplyr::group_by(id.grid.finer) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup() %>%
+  dplyr::left_join(grid.finer %>% dplyr::select(id.grid.finer), by = "id.grid.finer") %>%
+  na.omit() %>%
+  sf::st_as_sf() %>%
+  {.}
+
+tm_shape(main.usetype.per.grid) +
+  tm_polygons(col="usetype", title="building use type", palette="Set3", border.alpha = 0) +
+  tm_layout(main.title = "Dominant building type in each grid",
+            legend.position=c("left", "bottom"), legend.outside=FALSE,
+            title.size = 1) +
+  tm_shape(la.boundary.valid) +
+  tm_polygons("CITY", alpha=0, legend.show=FALSE)
+```
+
+Prototype building annual heat emission
+
+```{r prototypeBuildingAHandEnergy, fig.width = 10, fig.height = 10}
+load("../AH.Analysis/data/ann.sim.result.by.idf.epw.rda")
+load("../AH.Analysis/data/prototype.area.rda")
+load("../AH.Analysis/data/idf.kw.to.usetype.rda")
+
+annual.sim.EUI <- ann.sim.result.by.idf.epw %>%
+  dplyr::select(idf.kw, epw.id, emission.overall, energy.overall) %>%
+  tidyr::gather(variable, value, emission.overall:energy.overall) %>%
+  dplyr::left_join(prototype.area, by = c("idf.kw")) %>%
+  dplyr::mutate(GJ.per.m2 = value * 1e-9 / prototype.m2) %>%
+  dplyr::select(-value, -prototype.m2) %>%
+  {.}
+
+annual.sim.EUI.avg <- annual.sim.EUI %>%
+  dplyr::select(-epw.id) %>%
+  dplyr::group_by(idf.kw, variable) %>%
+  dplyr::summarise_if(is.numeric, mean) %>%
+  dplyr::ungroup() %>%
+  {.}
+
+annual.sim.EUI.avg %>%
+  dplyr::left_join(idf.kw.to.usetype, by="idf.kw") %>%
+  dplyr::mutate_at(vars(variable), recode, "energy.overall"="Electricity + Gas GJ/m2",
+                   "emission.overall"="Heat Emission GJ/m2") %>%
+  ggplot2::ggplot(ggplot2::aes(x = reorder(idf.kw, GJ.per.m2), y=GJ.per.m2, fill=interaction(variable, usetype))) +
+  ggplot2::geom_bar(stat = "identity", position = "dodge") +
+  ## ggplot2::scale_fill_grey(start=0.8, end=0.2) +
+  ggplot2::scale_fill_brewer(palette = "Paired", direction=-1, name = "") +
+  ggplot2::guides(fill=ggplot2::guide_legend(nrow=4)) +
+  ggplot2::xlab("EnergyPlus input file") +
+  ggplot2::ylab("Annual heat emission or energy consumption (GJ/m2)") +
+  ggplot2::ggtitle("Prototype building annual energy and heat emission") +
+  ggplot2::coord_flip() +
+  ggplot2::theme(legend.position = "bottom")
+
+
+
+```
+
+Prototype building annual heat emission to energy consumption ratio
+
+```{r prototypeBuildingAhEnergyRatio, fig.width = 10, fig.height = 10}
+
+heat.eui.ratio <- annual.sim.EUI %>%
+  tidyr::spread(variable, GJ.per.m2) %>%
+  dplyr::mutate(heat.over.energy = emission.overall / energy.overall) %>%
+  {.}
+
+heat.eui.ratio.avg <- heat.eui.ratio %>%
+  dplyr::select(-epw.id) %>%
+  dplyr::group_by(idf.kw) %>%
+  dplyr::summarise_if(is.numeric, mean) %>%
+  dplyr::ungroup() %>%
+  {.}
+
+heat.eui.ratio.avg %>%
+  dplyr::left_join(idf.kw.to.usetype, by="idf.kw") %>%
+  ggplot2::ggplot(ggplot2::aes(x = reorder(idf.kw, heat.over.energy),
+                               y = heat.over.energy,
+                               label = sprintf("%0.1f", heat.over.energy), fill=usetype)) +
+  ggplot2::geom_bar(stat="identity") +
+  ggplot2::coord_flip() +
+  ggplot2::geom_hline(yintercept = 1.0) +
+  ggplot2::ggtitle("Ratio of heat emission over energy consumption") +
+  ggplot2::xlab("EnergyPlus input file") +
+  ggplot2::ylab("heat emission divided by energy consumption") +
+  ggplot2::scale_fill_manual(values = rev(RColorBrewer::brewer.pal(name="Paired", n=8))[c(1, 3, 5, 7)]) +
+  ggplot2::guides(fill=ggplot2::guide_legend(nrow=2)) +
+  ggplot2::ylim(c(0, 16)) +
+  ggplot2::geom_text(hjust=-0.1) +
+  ggplot2::theme(legend.position = "bottom")
+```
+
