@@ -97,8 +97,92 @@ result.ann <- result.mon %>%
 
 ann.sim.result.by.idf.epw <- result.ann
 
-usethis::use_data(ann.sim.result.by.idf.epw)
+usethis::use_data(ann.sim.result.by.idf.epw, overwrite = TRUE)
 
-idf.kw.to.usetype <- readr::read_csv("idf_kw_to_EnergyAtlas_usetype.csv")
+## --------------------------------------------------------------
+## annual total by grid and building type
+## --------------------------------------------------------------
 
-usethis::use_data(idf.kw.to.usetype)
+ann.sim.result.by.idf.epw
+
+load(file="../data/prototype.area.rda")
+
+load("../data/building.metadata.rda")
+sf::st_geometry(building.metadata) <- NULL
+building.metadata <- building.metadata %>%
+    dplyr::mutate_at(vars(usetype), recode, "single_family"="residential", "multi_family"="residential", "residential_other"="residential") %>%
+    {.}
+
+building.metadata
+
+## this can be used to aggregate to any spatial level
+annual.total.AH.per.building <- building.metadata %>%
+    tibble::as_tibble() %>%
+    dplyr::select(-(GeneralUseType:EffectiveYearBuilt), -idf.name, -HEIGHT) %>%
+    dplyr::inner_join(ann.sim.result.by.idf.epw %>% dplyr::mutate(epw.id = as.numeric(epw.id)),
+                      by=c("idf.kw", "id.grid.coarse"="epw.id")) %>%
+    dplyr::inner_join(prototype.area, by = "idf.kw") %>%
+    ## scale simulation result by building size
+    tidyr::gather(variable, value, emission.exfiltration:energy.gas) %>%
+    dplyr::mutate(value = value / prototype.m2 * building.area.m2) %>%
+    tidyr::spread(variable, value) %>%
+    {.}
+
+usethis::use_data(annual.total.AH.per.building, overwrite = TRUE)
+
+annual.total.AH.per.building.type.grid.coarse <- annual.total.AH.per.building %>%
+    dplyr::select(id.grid.coarse, building.type, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.grid.coarse, building.type) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+usethis::use_data(annual.total.AH.per.building.type.grid.coarse)
+
+annual.total.AH.per.building.type.grid.finer <- annual.total.AH.per.building %>%
+    dplyr::select(id.grid.finer, building.type, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.grid.finer, building.type) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+annual.total.AH.per.building.type.tract <- annual.total.AH.per.building %>%
+    dplyr::select(id.tract, building.type, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.tract, building.type) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+annual.total.AH.per.usetype.grid.coarse <- annual.total.AH.per.building %>%
+    dplyr::select(id.grid.coarse, usetype, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.grid.coarse, usetype) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+annual.total.AH.per.usetype.grid.finer <- annual.total.AH.per.building %>%
+    dplyr::select(id.grid.finer, usetype, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.grid.finer, usetype) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+annual.total.AH.per.usetype.tract <- annual.total.AH.per.building %>%
+    dplyr::select(id.tract, usetype, FootprintArea.m2, building.area.m2, emission.exfiltration:energy.overall) %>%
+    dplyr::group_by(id.tract, usetype) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+usethis::use_data(annual.total.AH.per.building.type.grid.coarse)
+usethis::use_data(annual.total.AH.per.building.type.grid.finer)
+usethis::use_data(annual.total.AH.per.building.type.tract)
+usethis::use_data(annual.total.AH.per.usetype.grid.coarse)
+usethis::use_data(annual.total.AH.per.usetype.grid.finer)
+usethis::use_data(annual.total.AH.per.usetype.tract)
