@@ -223,8 +223,16 @@ packrat/lib*/
 # Data Folders
 AH.Analysis/data/
 AH.Analysis/data-raw/*.csv
+AH.Analysis/data-raw/*.xlsx
 AH.Analysis/data-raw/EP_output_csv/
 AH.Analysis/data-raw/hourly_heat_energy/
+AH.Analysis/data-raw/Res (CBES) different climate zones/
+AH.Analysis/data-raw/scenario_simulation/
+doc/
+
+# Rmd exported files
+rmd/scenario_simulation_airport_epw-exported_files/
+rmd/scenario_simulation_airport_epw_cache/
 
 # Data Files
 *.geojson
