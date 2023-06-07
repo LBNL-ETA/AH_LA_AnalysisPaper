@@ -12,6 +12,8 @@ files = list.files(pathname, pattern = "*.idf")
 files = files[which(!stringr::str_detect(files, "HeatPump_"))]
 files = files[which(!stringr::str_detect(files, "Lighting70_"))]
 files = files[which(!stringr::str_detect(files, "CoolingCoilCOP_"))]
+files = files[which(!stringr::str_detect(files, "infiltration_"))]
+files = files[which(!stringr::str_detect(files, "envelope_"))]
 
 files
 
@@ -21,6 +23,8 @@ apply.fun.to.files(files, pathname, "Lights,", get.object.names) %>%
     {.}
 
 non.2019.files <- files[which(!stringr::str_detect(files, "-2019_"))]
+
+non.2019.files 
 
 ## --------------------------------------------------------------------
 ## replace lighting with 30% lower density
@@ -72,11 +76,12 @@ for (f in non.2019.files) {
     print(f)
     file.full.path = sprintf("%s/%s", pathname, f)
     lines <- readLines(file.full.path)
-    if (stringr::str_detect(non.2019.files, "cz_6")) {
+    if (stringr::str_detect(f, "cz_6")) {
         wall.thickness = "    0.138209541957025"
     } else {
         wall.thickness = "    0.195463063813731"
     }
+    print(wall.thickness)
     # wall
     lines <- replace.field.value(lines,
                                  object.type = "Material,",
@@ -94,5 +99,44 @@ for (f in non.2019.files) {
                                  object.name="",
                                  field.name="Solar Heat Gain Coefficient",
                                  function(x) {return("    0.23")})
+    lines <- replace.field.value(lines,
+                                 object.type = "WindowMaterial:SimpleGlazingSystem,",
+                                 object.name="",
+                                 field.name="Solar Heat Gain Coefficient",
+                                 function(x) {return("    0.23")})
+    ## roof
+    if (stringr::str_detect(f, "pre-1980")) {
+        if (stringr::str_detect(f, "cz_14") || stringr::str_detect(f, "cz_16")) {
+            ceiling.thickness = "    0.27183427262208"
+        } else {
+            ceiling.thickness = "    0.214606004710193"
+        }
+        lines <- replace.field.value(lines, object.type = "Material,",
+                                      object.name=" ceiling 2 UAAdditionalCeilingIns,",
+                                      field.name="Thickness ",
+                                      function(x) {return(ceiling.thickness)})
+    }
     writeLines(lines, sprintf("%s/envelope_%s", pathname, f))
+}
+
+## --------------------------------------------------------------------
+## replace infiltration
+## --------------------------------------------------------------------
+
+for (f in non.2019.files) {
+    print(f)
+    file.full.path = sprintf("%s/%s", pathname, f)
+    lines <- readLines(file.full.path)
+    if (stringr::str_detect(f, "SingleFamily")) {
+        new.lines <- replace.field.value(lines, object.type = "ZoneInfiltration:DesignFlowRate,",
+                                         object.name="single_family_living infiltration",
+                                         field.name="Air Changes per Hour",
+                                         function(x) {return("    0.853361")})
+    } else { # multi-family
+        new.lines <- replace.field.value(lines, object.type = "ZoneInfiltration:DesignFlowRate,",
+                                         object.name="multi_family_living infiltration",
+                                         field.name="Air Changes per Hour",
+                                         function(x) {return("    1.194706")})
+    }
+    writeLines(new.lines, sprintf("%s/infiltration_%s", pathname, f))
 }
