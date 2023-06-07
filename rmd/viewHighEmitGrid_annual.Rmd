@@ -44,10 +44,11 @@ plot.ith.row <- function(top.df, ranking) {
                                  labelOptions = leaflet::labelOptions(noHide = TRUE,
                                                                       textOnly = TRUE,
                                                                       style = list(
-                                                                        "color" = "white",
+                                                                        "color" = "yellow",
                                                                         "font-style" = "bold",
                                                                         "font-size" = "12px",
-                                                                        "text-align" = "left"
+                                                                        "text-align" = "left",
+                                                                        padding = "10px 20px"
                                                                       ))
                                  ) %>%
     leaflet::addProviderTiles(providers$Esri.WorldImagery) %>%
@@ -68,7 +69,8 @@ grid.finer <- grid.finer %>%
   na.omit()
 
 grid.centroid <- sf::st_coordinates(sf::st_centroid(grid.finer)) %>%
-  tibble::as_tibble()
+  tibble::as_tibble() %>%
+  dplyr::mutate(X = X + 0.01)
 
 grid.finer <- grid.finer %>%
   dplyr::bind_cols(grid.centroid) %>%
@@ -103,7 +105,7 @@ plot.ith.row(top.k.percent.df, ranking=4)
 plot.ith.row(top.k.percent.df, ranking=5)
 ```
 
-## Ranking 50 to 55
+## Ranking 51 to 55
 
 ```{r totalHeat50to55}
 plot.ith.row(top.k.percent.df, ranking=51)
@@ -124,7 +126,7 @@ plot.ith.row(top.k.percent.surf.df, ranking=4)
 plot.ith.row(top.k.percent.surf.df, ranking=5)
 ```
 
-## Rank 50 to 55
+## Rank 51 to 55
 ```{r totalSurfHeat50to55}
 plot.ith.row(top.k.percent.surf.df, ranking=51)
 plot.ith.row(top.k.percent.surf.df, ranking=52)
