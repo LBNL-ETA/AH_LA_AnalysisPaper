@@ -1,6 +1,8 @@
 ## code compiling annual total goes in here
 ## assume home dir is "AH.Analysis/data-raw"
 
+setwd("AH.Analysis/data-raw")
+
 library("dplyr")
 
 get.total <- function(df) {
@@ -22,21 +24,39 @@ df.coarse.ann <- df.coarse %>%
     ## unit to GJ
     dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9})
 
-usethis::use_data(df.coarse.ann)
+usethis::use_data(df.coarse.ann, overwrite = TRUE)
+
+df.coarse.month <- df.coarse %>%
+    dplyr::mutate(month = substr(timestamp, 1, 2)) %>%
+    dplyr::group_by(geoid, month) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+usethis::use_data(df.coarse.month)
+
+list.files("hourly_heat_energy", pattern = "annual_2018_finer*")
 
 df.finer <- lapply(list.files("hourly_heat_energy", pattern = "annual_2018_finer*"), function(f) {
     print(f)
+    mon = gsub(".csv", "", gsub("annual_2018_finer_", "", f))
     readr::read_csv(sprintf("hourly_heat_energy/%s", f)) %>%
-        get.total()
+        dplyr::filter(!is.na(timestamp)) %>%
+        get.total() %>%
+        dplyr::mutate(month = mon) %>%
+        {.}
 }) %>%
     dplyr::bind_rows()
+
+df.finer.month <- df.finer
+
+usethis::use_data(df.finer.month, overwrite = TRUE)
 
 df.finer.ann <- df.finer %>%
     get.total() %>%
     ## unit to GJ
     dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9})
-
-df.finer.ann
 
 usethis::use_data(df.finer.ann, overwrite = TRUE)
 
@@ -51,6 +71,15 @@ df.tract.ann
 
 usethis::use_data(df.tract.ann)
 
+df.tract.month <- df.tract %>%
+    dplyr::mutate(month = substr(timestamp, 1, 2)) %>%
+    dplyr::group_by(geoid, month) %>%
+    dplyr::summarise_if(is.numeric, sum) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
+
+usethis::use_data(df.tract.month)
 
 ## --------------------------------------------------------------
 ## annual total by idf and epw
@@ -68,9 +97,9 @@ result.mon <- lapply(files, function(f) {
     print(f)
     tokens = unlist(stringr::str_split(f, pattern = "____"))
     idf.kw = tokens[[1]]
-    epw.id = gsub(".csv", "", tokens[[2]])
+    epw = gsub(".csv", "", tokens[[2]])
     df <- read.eplusout(result.csv.dir, f) %>%
-        dplyr::mutate(idf.kw = idf.kw, epw.id = epw.id) %>%
+        dplyr::mutate(idf.kw = idf.kw, epw.id = epw) %>%
         {.}
     df <- df %>%
         dplyr::select(`Date/Time`, idf.kw, epw.id, everything()) %>%
@@ -87,7 +116,10 @@ result.mon <- lapply(files, function(f) {
 ## monthly simulation result
 mon.sim.result.by.idf.epw <- result.mon
 
-usethis::use_data(mon.sim.result.by.idf.epw)
+mon.sim.result.by.idf.epw  %>%
+    summary()
+
+usethis::use_data(mon.sim.result.by.idf.epw, overwrite = TRUE)
 
 result.ann <- result.mon %>%
     dplyr::group_by(idf.kw, epw.id) %>%
