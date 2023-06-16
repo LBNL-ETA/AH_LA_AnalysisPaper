@@ -24,6 +24,9 @@ BLDG_NAME_LIST = glob.glob("{}/*.idf".format(WORK_FOLDER_NAME))
 
 # BLDG_NAME_LIST = ['idf_change_design_day/NursingHome_baseline-LA.idf']
 
+# only modify heatpump
+BLDG_NAME_LIST = [f for f in BLDG_NAME_LIST if ("HeatPump" in f)]
+
 for bldg_name in BLDG_NAME_LIST:
     print(bldg_name)
     input_file_path = os.path.join(bldg_name)

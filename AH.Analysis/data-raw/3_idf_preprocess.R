@@ -13,6 +13,7 @@ pathname = "scenario_simulation/idf_to_modify"
 
 prefixes = c("bldg_11_*", "bldg_13_*")
 names(prefixes) = c("SingleFamily", "MultiFamily")
+
 ## copy single and multi-family
 for (building.type in c("SingleFamily", "MultiFamily")) {
     prefix = prefixes[[building.type]]
@@ -43,9 +44,14 @@ for (building.type in c("SingleFamily", "MultiFamily")) {
     }
 }
 
+input.dir = "scenario_simulation/"
+
 files = list.files("scenario_simulation/idf_to_modify", pattern = "*.idf")
 
 files
+
+## only modify heatpump here
+files <- files[which(stringr::str_detect(files, "HeatPump"))]
 
 ## check number of design days
 num.design.day <- apply.fun.to.files(files, pathname, get.object.count.by.type, object.type="SizingPeriod:DesignDay")
@@ -103,9 +109,10 @@ for (f in only.two.design.days) {
     print("##############################")
     file.full.path = sprintf("scenario_simulation/idf_to_modify/%s", f)
     lines <- readLines(file.full.path)
-    ## replace Site:Location
-    lines <- read.idfEnergyPlus::replace.idf.chunk(lines, new.text=location.data, object.type = "Site:Location,",
-                                                  object.name="", verbose=TRUE)
+    lines <- read.idfEnergyPlus::replace.idf.chunk(lines,
+                                                   new.text=location.data,
+                                                   object.type = "Site:Location,",
+                                                   object.name="", verbose=TRUE)
     ## replace design day
     lines <- replace.design.day(lines, ddy.lines=la.design.day, design.day.kw="Ann Htg 99.6% Condns", verbose=TRUE)
     lines <- replace.design.day(lines, ddy.lines=la.design.day, design.day.kw="Ann Clg 0{0,1}.4% Condns", verbose=TRUE)
