@@ -111,6 +111,54 @@ tm_shape(main.usetype.per.grid) +
   tm_polygons("CITY", alpha=0, legend.show=FALSE)
 ```
 
+Building type distribution for the top 10% heat emission grid cells.
+
+```{r top10percentHeatEmissionGrid}
+main.usetype.high.emission.grid <- df.finer.ann %>%
+  dplyr::arrange(desc(emission.overall)) %>%
+  dplyr::slice(1:(nrow(.) %/% 10)) %>%
+  distinct(geoid) %>%
+  dplyr::rename(id.grid.finer = geoid) %>%
+  dplyr::inner_join(annual.total.AH.per.usetype.grid.finer, by = "id.grid.finer")  %>%
+  dplyr::arrange(id.grid.finer, desc(building.area.m2)) %>%
+  dplyr::group_by(id.grid.finer) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup() %>%
+  dplyr::left_join(grid.finer %>% dplyr::select(id.grid.finer), by = "id.grid.finer") %>%
+  na.omit() %>%
+  sf::st_as_sf() %>%
+  {.}
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap.Mapnik") +
+tm_shape(main.usetype.high.emission.grid) +
+  tm_polygons(col="usetype", title="building use type", palette="Set3", border.alpha = 0) +
+  tm_layout(main.title = "Dominant building type in grid cells with high AH",
+            legend.position=c("left", "bottom"), legend.outside=FALSE,
+            title.size = 1) +
+  tm_shape(la.boundary.valid) +
+  tm_polygons("CITY", alpha=0, legend.show=FALSE)
+
+annual.total.AH.per.usetype.grid.finer
+
+to.reg <- annual.total.AH.per.usetype.grid.finer %>%
+  dplyr::group_by(id.grid.finer) %>%
+  dplyr::mutate(area.ratio = building.area.m2 / sum(building.area.m2)) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(id.grid.finer, usetype, area.ratio) %>%
+  tidyr::spread(usetype, area.ratio, fill = 0.0) %>%
+  dplyr::inner_join(df.finer.ann %>%
+                    dplyr::select(geoid, emission.overall),
+                    by = c("id.grid.finer"="geoid")) %>%
+  {.}
+
+to.reg
+
+reg.out <- lm(emission.overall ~ industrial + commercial + residential, data = to.reg)
+
+reg.out
+```
+
 Prototype building annual heat emission
 
 ```{r prototypeBuildingAHandEnergy, fig.width = 10, fig.height = 10}
@@ -148,8 +196,6 @@ annual.sim.EUI.avg %>%
   ggplot2::coord_flip() +
   ggplot2::theme(legend.position = "bottom")
 
-
-
 ```
 
 Prototype building annual heat emission to energy consumption ratio
@@ -184,5 +230,55 @@ heat.eui.ratio.avg %>%
   ggplot2::ylim(c(0, 16)) +
   ggplot2::geom_text(hjust=-0.1) +
   ggplot2::theme(legend.position = "bottom")
+```
+
+# Which AH component is the largest
+
+## annual
+
+```{r AHcomponent, fig.width = 10}
+
+df.finer.ann %>%
+  dplyr::select(-starts_with("energy"), -emission.overall) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:emission.surf) %>%
+  ggplot2::ggplot(ggplot2::aes(x = variable, y = GJ, fill = variable)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::ggtitle("Distribution of five AH component among finer grid") +
+  ggplot2::coord_flip() +
+  ggplot2::theme()
+
+df.finer.ann %>%
+  dplyr::select(-starts_with("energy"), -emission.overall) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:emission.surf) %>%
+  ggplot2::ggplot(ggplot2::aes(x = variable, y = GJ, fill = variable)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::ggtitle("Distribution of five AH component among finer grid, crop") +
+  ggplot2::coord_flip(ylim = c(-1000, 40000)) +
+  ggplot2::theme()
+```
+
+## monthly
+```{r AHcomponentJuly, fig.width = 10, fig.height = 10}
+load("../AH.Analysis/data/df.finer.month.rda")
+
+df.finer.month %>%
+  dplyr::select(-starts_with("energy"), -emission.overall) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:emission.surf) %>%
+  ggplot2::ggplot(ggplot2::aes(x = variable, y = GJ, fill = variable)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::ggtitle("Distribution of five AH component among finer grid") +
+  ggplot2::facet_wrap(.~month, ncol = 2) +
+  ggplot2::coord_flip() +
+  ggplot2::theme()
+
+df.finer.month %>%
+  dplyr::select(-starts_with("energy"), -emission.overall) %>%
+  tidyr::gather(variable, GJ, emission.exfiltration:emission.surf) %>%
+  ggplot2::ggplot(ggplot2::aes(x = variable, y = GJ, fill = variable)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::ggtitle("Distribution of five AH component among finer grid, crop") +
+  ggplot2::facet_wrap(.~month, ncol = 2) +
+  ggplot2::coord_flip(ylim = c(-5500, 7000)) +
+  ggplot2::theme()
 ```
 
