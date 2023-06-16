@@ -49,7 +49,10 @@ df.finer <- lapply(list.files("hourly_heat_energy", pattern = "annual_2018_finer
 }) %>%
     dplyr::bind_rows()
 
-df.finer.month <- df.finer
+df.finer.month <- df.finer %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate_at(vars(emission.exfiltration:energy.overall), function (x) {x * 1e-9}) %>%
+    {.}
 
 usethis::use_data(df.finer.month, overwrite = TRUE)
 
