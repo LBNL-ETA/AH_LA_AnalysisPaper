@@ -230,6 +230,9 @@ AH.Analysis/data-raw/Res (CBES) different climate zones/
 AH.Analysis/data-raw/scenario_simulation/
 doc/
 
+# presentation folder
+presentation/
+
 # Rmd exported files
 rmd/scenario_simulation_airport_epw-exported_files/
 rmd/scenario_simulation_airport_epw_cache/
