@@ -56,24 +56,20 @@ ui <- fluidPage(
 server <- function(input, output) {
     library("dplyr")
     devtools::load_all("~/Dropbox/workLBNL/packages/AHhelper")
-    output$dyPlot <- renderPlot({
-
-        output$dyPlot <- renderPlotly({
-            ## read data files
-            dirname = "../AH.Analysis/data-raw/scenario_simulation/scenario_sim_output_cz_6_csv"
-            filename = sprintf("%s_%s_cz_6____%s.csv", input$scenario, input$idf, input$epw)
-            filename = gsub("cz_6_cz_6", "cz_6", filename)
-            print(dirname)
-            print(filename)
-            sim.result <- AHhelper::read.eplusout(dirname, filename) %>%
-                AHhelper::convert.timestamp(year = 2018) %>%
-                dplyr::rename(time = `Date/Time`,
-                              J = input$variable)
-            print(sim.result %>% head())
-            plot_ly(sim.result, x = ~time, y = ~J) %>%
-                add_lines()
-        })
-
+    output$dyPlot <- renderPlotly({
+        ## read data files
+        dirname = "../AH.Analysis/data-raw/scenario_simulation/scenario_sim_output_cz_6_csv"
+        filename = sprintf("%s_%s_cz_6____%s.csv", input$scenario, input$idf, input$epw)
+        filename = gsub("cz_6_cz_6", "cz_6", filename)
+        print(dirname)
+        print(filename)
+        sim.result <- AHhelper::read.eplusout(dirname, filename) %>%
+            AHhelper::convert.timestamp(year = 2018) %>%
+            dplyr::rename(time = `Date/Time`,
+                          J = input$variable)
+        print(sim.result %>% head())
+        plot_ly(sim.result, x = ~time, y = ~J) %>%
+            add_lines()
     })
 
 }
