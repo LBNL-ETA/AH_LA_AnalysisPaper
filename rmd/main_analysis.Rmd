@@ -282,3 +282,187 @@ df.finer.month %>%
   ggplot2::theme()
 ```
 
+## Daily heat emission vs outdoor temperature
+
+```{r dailyEmissionTemp, fig.width = 10}
+load("../AH.Analysis/data/df.weather.2018.rda")
+
+df.weather.avg <- df.weather.2018 %>%
+  tidyr::gather(variable, value, DryBulb.C:`WindSpd.m/s`) %>%
+  dplyr::group_by(month, day, hour, variable) %>%
+  dplyr::summarise(value = mean(value)) %>%
+  dplyr::ungroup() %>%
+  {.}
+df.weather.avg <- df.weather.avg %>%
+  dplyr::select(-hour) %>%
+  dplyr::group_by(month, day, variable) %>%
+  dplyr::summarise_if(is.numeric, mean) %>%
+  dplyr::ungroup() %>%
+  {.}
+
+load("../AH.Analysis/data/df.finer.daily.rda")
+
+grid.finer.area <- grid.finer
+
+sf::st_geometry(grid.finer.area) <- NULL
+
+grid.finer.area <- grid.finer.area %>%
+  dplyr::select(id.grid.finer, area.m2) %>%
+  tibble::as_tibble()
+
+grid.finer.avg.wperm2 <- df.finer.daily %>%
+  dplyr::left_join(grid.finer.area, by = c("geoid"="id.grid.finer")) %>%
+  ## GJ to Wh, divide by 24h
+  dplyr::mutate_at(vars(starts_with("emission"), starts_with("energy")), list(~ . * 277778 / 24 / .data$area.m2)) %>%
+  dplyr::select(-geoid, -area.m2) %>%
+  dplyr::group_by(date) %>%
+  dplyr::summarize_if(is.numeric, mean) %>%
+  dplyr::ungroup() %>%
+  tidyr::separate(date, into=c("month", "day"), sep="/") %>%
+  dplyr::mutate_at(vars(month, day), as.numeric)
+
+to.plot.correlation <- df.weather.avg %>%
+  tidyr::spread(variable, value) %>%
+  dplyr::inner_join(grid.finer.avg.wperm2, by=c("month", "day")) %>%
+  {.}
+
+to.plot.correlation %>%
+  ggplot2::ggplot(ggplot2::aes(x = DryBulb.C, y=emission.overall)) +
+  ggplot2::geom_point(size=0.5) +
+  ggpmisc::stat_poly_line() +
+  ggpmisc::stat_poly_eq(aes(label = paste(after_stat(eq.label),
+                                          after_stat(rr.label), sep = "*\", \"*"))) +
+  ggplot2::ylab("Average grid heat emission (W/m2)") +
+  ggplot2::ggtitle("Daily average heat emission flux vs\noutdoor temperature") +
+  ggplot2::theme(text = ggplot2::element_text(size = 20))
+
+```
+
+
+```{r dailyEmissionTempComp, fig.show="hold", out.width="50%", fig.width=6}
+heat.source = c("emission.surf", "emission.rej", "emission.exfiltration", "emission.exhaust", "emission.ref")
+heat.label = c("building surface", "HVAC rejection", "exfiltration", "exhaust",
+               "relief air")
+for (i in seq_along(heat.source)) {
+  p <- to.plot.correlation %>%
+    ggplot2::ggplot(ggplot2::aes_string(x = "DryBulb.C", y=heat.source[[i]])) +
+    ggplot2::geom_point(size=0.5) +
+    ggpmisc::stat_poly_line() +
+    ggpmisc::stat_poly_eq(aes(label = paste(after_stat(eq.label),
+                                            after_stat(rr.label), sep = "*\", \"*"))) +
+    ggplot2::xlab("DryBulb Temperature") +
+    ggplot2::ylab("Average grid heat emission (W/m2)") +
+    ggplot2::ggtitle(sprintf("Daily average %s heat emission flux vs\noutdoor temperature", heat.label[[i]])) +
+    ggplot2::theme(text = ggplot2::element_text(size = 14),
+                   axis.title = ggplot2::element_text(size = 14))
+  print(p)
+}
+```
+
+# The timing of highest heat emission
+
+## monthly total
+
+```{r monthlyTotal, fig.show="hold", out.width="50%", fig.width=6, fig.height=4}
+to.plot.monthly <- df.finer.month %>%
+  dplyr::left_join(grid.finer.area, by = c("geoid"="id.grid.finer")) %>%
+  ## MJ/m2, normalized by grid cell area, roughly 200,000m2
+  dplyr::mutate_at(vars(starts_with("emission"), starts_with("energy")), list(~ . * 1e3 / .data$area.m2)) %>%
+  dplyr::select(-geoid, -area.m2) %>%
+  dplyr::group_by(month) %>%
+  dplyr::summarize_if(is.numeric, mean) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(month = as.numeric(month)) %>%
+  {.}
+
+to.plot.monthly %>%
+  ggplot2::ggplot(ggplot2::aes(x = month, y = emission.overall)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::scale_x_continuous(breaks=1:12) +
+  ggplot2::ggtitle("Monthly Total Heat Emission Averaged Across 450m Grids") +
+  ggplot2::theme()
+
+to.plot.monthly %>%
+  dplyr::select(-emission.overall) %>%
+  dplyr::select(month, starts_with("emission")) %>%
+  tidyr::gather(variable, value, starts_with("emission")) %>%
+  ggplot2::ggplot(ggplot2::aes(x = month, y = value, color = variable)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::scale_x_continuous(breaks=1:12) +
+  ggplot2::ggtitle("Monthly Total Heat Emission by Component Averaged Across 450m Grids") +
+  ggplot2::theme()
+```
+
+## diurnal profile overall and by month
+
+```{r diurnalPerMonth, fig.width=7, fig.height=4}
+load("../AH.Analysis/data/diurnal.month.finer.rda")
+load("../AH.Analysis/data/diurnal.finer.rda")
+
+diurnal.finer %>%
+  ggplot2::ggplot(ggplot2::aes(x = hour, y = emission.overall)) +
+  ggplot2::geom_line() +
+  ggplot2::geom_point() +
+  ggplot2::scale_x_continuous(breaks=0:23) +
+  ggplot2::ggtitle("Hourly Average Heat Emission Averaged Across 450m Grids") +
+  ggplot2::theme()
+
+label.hr = 13
+df.label <- diurnal.month.finer %>%
+  dplyr::filter(hour == label.hr) %>%
+  {.}
+
+diurnal.month.finer %>%
+  dplyr::mutate(month = factor(month)) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_point(ggplot2::aes(x=hour, y=emission.overall, color=month)) +
+  ggplot2::geom_line(ggplot2::aes(x=hour, y=emission.overall, color=month), linetype="dashed") +
+  ggrepel::geom_label_repel(ggplot2::aes(x=label.hr, y=emission.overall, label=month), data=df.label) +
+  ggplot2::geom_line(ggplot2::aes(x=hour, y=emission.overall), data=diurnal.finer) +
+  ggplot2::geom_point(ggplot2::aes(x=hour, y=emission.overall), data=diurnal.finer) +
+  ggplot2::ylab("Heat Emission (W/m2)") +
+  ggplot2::ggtitle("Diurnal total building AH profile by month") +
+  ggplot2::theme()
+```
+
+```{r diurnalPerMonthComponent, fig.show="hold", out.width="50%"}
+for (i in seq_along(heat.source)) {
+  variable = heat.source[[i]]
+  p <- diurnal.month.finer %>%
+    dplyr::mutate(month = factor(month)) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_point(ggplot2::aes_string(x="hour", y=variable, color="month")) +
+    ggplot2::geom_line(ggplot2::aes_string(x="hour", y=variable, color="month"), linetype="dashed") +
+    ggrepel::geom_label_repel(ggplot2::aes_string(x=label.hr, y=variable, label="month"), data=df.label) +
+    ggplot2::geom_line(ggplot2::aes_string(x="hour", y=variable), data=diurnal.finer) +
+    ggplot2::geom_point(ggplot2::aes_string(x="hour", y=variable), data=diurnal.finer) +
+    ggplot2::ylab("Heat Emission (W/m2)") +
+    ggplot2::ggtitle(sprintf("Diurnal %s heat emission profile by month", heat.label[[i]])) +
+    ggplot2::theme()
+  print(p)
+}
+```
+
+# Comparison of the spatial distribution of heat emission at noon and night in a weekday and a weekend day in winter and summer
+
+```{r mapSnapshot, fig.width = 10}
+load("../AH.Analysis/data/snapshot.finer.rda")
+
+to.plot.snapshot <- snapshot.finer %>%
+  dplyr::left_join(grid.finer %>% dplyr::select(id.grid.finer),
+                   by=c("geoid"="id.grid.finer")) %>%
+  sf::st_as_sf() %>%
+  {.}
+
+tmap_mode("plot")
+tm_shape(to.plot.snapshot) +
+  tm_polygons(col="emission.overall", n=8, style="quantile", midpoint=0, palette="seq", border.alpha = 0) +
+  tm_facets(by="time.label", ncol=4) +
+  tm_layout(main.title = "Heat emission at different time snapshots",
+            legend.position=c("left", "bottom"), legend.outside=FALSE,
+            aes.palette = list(seq = "-RdYlGn")) +
+  tm_shape(la.boundary.valid) +
+  tm_polygons("CITY", alpha=0, legend.show=FALSE)
+```
