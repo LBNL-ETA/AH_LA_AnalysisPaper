@@ -35,6 +35,7 @@ To be added...
 - rmd/ has the analysis script.
     - heatwave_analysis.Rmd has the script for the heatwave period analysis used in the AGU poster
     - main_analysis.Rmd has the script for the annual, monthly, diurnal profile analysis.
+    - viewHighEmitGrid_annual.Rmd has the script for viewing satellite view of grid cells with high anthropogenic heat
 
 - app/ has the code for a shiny app to visualize simulation results of prototype building simulation results in folder
 "../AH.Analysis/data-raw/scenario_simulation/scenario_sim_output_cz_6_csv"
